@@ -6,7 +6,7 @@
 
     <!-- A-Frame + AR.js -->
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
 
     <!-- Tailwind for UI -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -168,7 +168,7 @@
         Set Waypoint
       </button>
       <div class="mt-3 text-xs text-gray-600">
-        <p>👆 Point camera at buildings</p>
+        <p>👆 Point camera at buildings or markers</p>
         <p>📱 Tap markers for info</p>
       </div>
     </div>
@@ -206,13 +206,13 @@
           position="0 -0.4 -1"
           geometry="primitive: plane; width: 1; height: 0.2"
           material="color: #1e293b; opacity: 0.7"
-          text="value: Joylens Store Navigator; align: center; color: white; font: roboto; width: 2"
+          text="value: Joylens Store Navigator (Indoor/Outdoor); align: center; color: white; font: roboto; width: 2"
         ></a-entity>
       </a-camera>
 
-      <!-- Joylens Store Marker -->
+      <!-- Joylens Store GPS Marker -->
       <a-entity
-        id="joylensMarker"
+        id="joylensGpsMarker"
         gps-entity-place="latitude: 14.370209559833405; longitude: 120.92365054409018"
         clickable
       >
@@ -247,14 +247,63 @@
         ></a-entity>
       </a-entity>
 
-      <!-- Real-Time Direction Arrow -->
-      <a-entity
-        id="directionArrow"
-        geometry="primitive: cone; radiusBottom: 0.6; radiusTop: 0.1; height: 2"
-        material="color: #22d3ee; opacity: 0.85; shader: standard"
-        position="0 -0.5 -3"
-        visible="false"
-      ></a-entity>
+      <!-- Joylens Store NFT Marker for Indoor -->
+      <a-nft
+        type="nft"
+        url="https://raw.githack.com/AR-js-org/AR.js/master/aframe/examples/image-tracking/nft/trex/trex"  <!-- Replace with your NFT descriptors path -->
+        smooth="true"
+        smoothCount="10"
+        smoothTolerance="0.01"
+        smoothThreshold="5"
+        clickable
+      >
+        <!-- Store Building Model (same as GPS) -->
+        <a-box
+          color="#ef4444"
+          depth="3"
+          height="5"
+          width="3"
+          animation="property: rotation; to: 0 360 0; loop: true; dur: 10000"
+          material="shader: standard; metalness: 0.2; roughness: 0.8"
+        ></a-box>
+        
+        <!-- Store Label -->
+        <a-text
+          value="JOYLENS STORE (Indoor Marker)"
+          align="center"
+          position="0 3.5 0"
+          scale="2.5 2.5 2.5"
+          color="#ffffff"
+          font="roboto"
+          geometry="primitive: plane; width: 2.5; height: 0.8"
+          material="color: #ef4444; opacity: 0.9"
+        ></a-text>
+        
+        <!-- Floating Pin Icon -->
+        <a-entity
+          geometry="primitive: sphere; radius: 0.4"
+          material="color: #facc15"
+          position="0 4.5 0"
+          animation="property: position; to: 0 5 0; dir: alternate; loop: true; dur: 800"
+        ></a-entity>
+      </a-nft>
+
+      <!-- Real-Time Direction Arrow (Compound: Shaft + Head) -->
+      <a-entity id="directionArrow" position="0 -0.5 -3" visible="false">
+        <!-- Arrow Shaft (Cylinder) -->
+        <a-entity
+          geometry="primitive: cylinder; radius: 0.1; height: 1.5"
+          material="color: #22d3ee; opacity: 0.85; shader: standard"
+          position="0 0.75 0"
+          rotation="90 0 0"
+        ></a-entity>
+        <!-- Arrow Head (cone) -->
+        <a-entity
+          geometry="primitive: cone; radiusBottom: 0.3; radiusTop: 0; height: 0.6"
+          material="color: #22d3ee; opacity: 0.85; shader: standard"
+          position="0 0 0"
+        ></a-entity>
+      </a-entity>
     </a-scene>
 
     <script>
@@ -271,6 +320,9 @@
       let waypointActive = false;
       let lastBearing = 0;
       let deviceHeading = 0;
+      let lastTimestamp = 0;
+      let velocity = { x: 0, y: 0, z: 0 };
+      let isIndoor = false; // Flag for indoor mode (detected by poor GPS accuracy)
 
       // Hide loading spinner when AR scene is ready
       window.addEventListener('arjs-video-loaded', () => {
@@ -286,6 +338,27 @@
         });
       } else {
         console.warn("DeviceOrientationEvent not supported");
+      }
+
+      // Handle device motion for dead reckoning (indoor fallback)
+      if (window.DeviceMotionEvent) {
+        window.addEventListener('devicemotion', (event) => {
+          if (isIndoor && event.timestamp && lastTimestamp) {
+            const dt = (event.timestamp - lastTimestamp) / 1000; // Delta time in seconds
+            const acc = event.acceleration || { x: 0, y: 0, z: 0 }; // Linear acceleration (fallback to 0)
+            // Simple integration (add filtering in production)
+            velocity.x += acc.x * dt;
+            velocity.y += acc.y * dt;
+            velocity.z += acc.z * dt;
+            // Update position (assume flat plane, adjust for heading)
+            const headingRad = deviceHeading * Math.PI / 180;
+            userPosition.latitude += (velocity.y * Math.cos(headingRad) - velocity.x * Math.sin(headingRad)) / 111111; // Approx m to lat
+            userPosition.longitude += (velocity.y * Math.sin(headingRad) + velocity.x * Math.cos(headingRad)) / (111111 * Math.cos(userPosition.latitude * Math.PI / 180)); // Approx m to lon
+          }
+          lastTimestamp = event.timestamp;
+        });
+      } else {
+        console.warn("DeviceMotionEvent not supported - No indoor dead reckoning");
       }
 
       // Calculate distance between two GPS coordinates (Haversine formula)
@@ -344,6 +417,10 @@
         if (userPosition) {
           const distance = calculateDistance(userPosition.latitude, userPosition.longitude, building.lat, building.lng);
           document.getElementById("infoDistance").textContent = formatDistance(distance);
+          if (distance < 10) {
+            // Show marker when close
+            document.querySelector("#joylensGpsMarker").setAttribute("visible", "true");
+          }
         } else {
           document.getElementById("infoDistance").textContent = "Calculating...";
         }
@@ -371,7 +448,7 @@
         const arrow = document.getElementById("directionArrow");
         if (waypointActive) {
           arrow.setAttribute("visible", "true");
-          alert(`✅ Waypoint set!\n📍 Joylens Store\n📌 ${joylens.lat.toFixed(6)}, ${joylens.lng.toFixed(6)}\n\nFollow the blue arrow!`);
+          alert(`✅ Waypoint set!\n📍 Joylens Store\n📌 ${joylens.lat.toFixed(6)}, ${joylens.lng.toFixed(6)}\n\nFollow the blue arrow! Scan the store marker when close for info.`);
         } else {
           arrow.setAttribute("visible", "false");
           alert("Waypoint deactivated");
@@ -424,16 +501,18 @@
         }
       });
 
-      // Continuous GPS tracking
+      // Continuous GPS tracking with indoor fallback detection
       if (navigator.geolocation) {
         navigator.geolocation.watchPosition(
           (position) => {
             userPosition = position.coords;
-            console.log("User position:", userPosition.latitude, userPosition.longitude);
+            isIndoor = position.coords.accuracy > 20; // Assume indoor if accuracy poor (>20m)
+            console.log("User position:", userPosition.latitude, userPosition.longitude, "Indoor mode:", isIndoor);
           },
           (error) => {
             console.error("GPS error:", error);
             document.getElementById("infoDistance").textContent = "Location unavailable";
+            isIndoor = true; // Fallback to indoor if error
           },
           {
             enableHighAccuracy: true,
