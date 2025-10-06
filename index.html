@@ -31,6 +31,19 @@
         padding: 15px;
         display: none;
         box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        transition: transform 0.3s ease-in-out;
+      }
+      #infoCard.show {
+        transform: translateY(0);
+      }
+      #infoCard.hidden {
+        transform: translateY(100px);
+      }
+      #closeButton {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        cursor: pointer;
       }
     </style>
   </head>
@@ -39,13 +52,15 @@
     <!-- Menu -->
     <div id="menu" class="shadow-lg">
       <h2 class="text-lg font-bold mb-2">AR Map Demo</h2>
-      <button onclick="goToJoylens()" class="bg-blue-500 text-white px-3 py-1 rounded">Set Waypoint</button>
+      <button onclick="goToJoylens()" class="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600">Set Waypoint</button>
     </div>
 
     <!-- Info Card -->
-    <div id="infoCard" class="shadow-lg">
+    <div id="infoCard" class="shadow-lg hidden">
+      <span id="closeButton" onclick="hideInfo()" class="text-red-500 font-bold">&times;</span>
       <h3 id="infoName" class="text-lg font-bold"></h3>
       <p id="infoDesc" class="text-sm mt-1"></p>
+      <p id="infoDistance" class="text-sm mt-1 font-semibold"></p>
     </div>
 
     <!-- AR Scene -->
@@ -54,7 +69,25 @@
       embedded
       arjs="sourceType: webcam; trackingMethod: best; debugUIEnabled: false;"
     >
-      <a-camera gps-camera rotation-reader></a-camera>
+      <a-camera gps-camera rotation-reader>
+        <!-- Camera label -->
+        <a-entity
+          position="0 -0.5 -1"
+          geometry="primitive: plane; width: 0.5; height: 0.2"
+          material="color: #333; opacity: 0.7"
+          text="value: Camera View; align: center; color: white; font: roboto"
+        ></a-entity>
+      </a-camera>
+
+      <!-- Arrow pointing to Joylens -->
+      <a-entity
+        id="arrow"
+        gps-entity-place="latitude: ${joylens.lat}; longitude: ${joylens.lng}"
+        gltf-model="https://raw.githubusercontent.com/AR-js-org/AR.js/master/data/models/arrow.glb"
+        scale="0.5 0.5 0.5"
+        look-at="[gps-camera]"
+        animation="property: rotation; to: 0 360 0; loop: true; dur: 5000"
+      ></a-entity>
     </a-scene>
 
     <script>
@@ -74,18 +107,72 @@
       marker.addEventListener("click", () => showInfo(joylens));
       document.querySelector("a-scene").appendChild(marker);
 
-      // Show info card
+      // Calculate distance to Joylens
+      function calculateDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371e3; // Earth's radius in meters
+        const φ1 = lat1 * Math.PI / 180;
+        const φ2 = lat2 * Math.PI / 180;
+        const Δφ = (lat2 - lat1) * Math.PI / 180;
+        const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+        const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                  Math.cos(φ1) * Math.cos(φ2) *
+                  Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+        const distance = R * c;
+        return (distance / 1000).toFixed(2); // Convert to kilometers
+      }
+
+      // Show info card with animation
       function showInfo(building) {
         const card = document.getElementById("infoCard");
         document.getElementById("infoName").textContent = building.name;
         document.getElementById("infoDesc").textContent = building.desc;
+
+        // Get user location and calculate distance
+        navigator.geolocation.getCurrentPosition(position => {
+          const userLat = position.coords.latitude;
+          const userLon = position.coords.longitude;
+          const distance = calculateDistance(userLat, userLon, building.lat, building.lng);
+          document.getElementById("infoDistance").textContent = `Distance: ${distance} km`;
+        });
+
         card.style.display = "block";
+        card.classList.remove("hidden");
+        card.classList.add("show");
       }
 
-      // Waypoint button (for now, just alert)
+      // Hide info card with animation
+      function hideInfo() {
+        const card = document.getElementById("infoCard");
+        card.classList.remove("show");
+        card.classList.add("hidden");
+        setTimeout(() => {
+          card.style.display = "none";
+        }, 300);
+      }
+
+      // Waypoint button
       function goToJoylens() {
         alert("Waypoint set to Joylens Store at coordinates: " + joylens.lat + ", " + joylens.lng);
       }
+
+      // Update arrow direction
+      AFRAME.registerComponent("arrow-direction", {
+        tick: function() {
+          const camera = document.querySelector("[gps-camera]");
+          const arrow = this.el;
+          if (camera && arrow) {
+            const camPos = camera.getAttribute("position");
+            const targetPos = arrow.getAttribute("gps-entity-place");
+            arrow.setAttribute("look-at", "[gps-camera]");
+          }
+        }
+      });
+
+      // Apply arrow-direction component to arrow
+      document.querySelector("#arrow").setAttribute("arrow-direction", "");
     </script>
   </body>
 </html>
