@@ -247,7 +247,7 @@
         ></a-entity>
       </a-entity>
 
-      <!-- Direction Arrow -->
+      <!-- Real-Time Direction Arrow -->
       <a-entity
         id="directionArrow"
         geometry="primitive: cone; radiusBottom: 0.6; radiusTop: 0.1; height: 2"
@@ -270,11 +270,23 @@
       let userPosition = null;
       let waypointActive = false;
       let lastBearing = 0;
+      let deviceHeading = 0;
 
       // Hide loading spinner when AR scene is ready
       window.addEventListener('arjs-video-loaded', () => {
         document.getElementById('loadingSpinner').style.display = 'none';
       });
+
+      // Handle device orientation for compass heading
+      if (window.DeviceOrientationEvent) {
+        window.addEventListener('deviceorientation', (event) => {
+          if (event.alpha !== null) {
+            deviceHeading = event.alpha; // Compass heading in degrees (0 = North)
+          }
+        });
+      } else {
+        console.warn("DeviceOrientationEvent not supported");
+      }
 
       // Calculate distance between two GPS coordinates (Haversine formula)
       function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -381,20 +393,23 @@
         }
       });
 
-      // Custom component for arrow updates
+      // Custom component for real-time arrow updates
       AFRAME.registerComponent('update-arrow', {
         tick: function () {
           if (waypointActive && userPosition) {
             const arrow = this.el;
+            // Calculate bearing from user to target
             const bearing = calculateBearing(
               userPosition.latitude,
               userPosition.longitude,
               joylens.lat,
               joylens.lng
             );
-            const smoothedBearing = smoothBearing(bearing);
+            // Adjust bearing with device orientation
+            const adjustedBearing = (bearing - deviceHeading + 360) % 360;
+            const smoothedBearing = smoothBearing(adjustedBearing);
             arrow.setAttribute('rotation', `0 ${smoothedBearing} 0`);
-            
+
             // Update distance in info card if visible
             if (document.getElementById("infoCard").style.display === "block") {
               const distance = calculateDistance(
