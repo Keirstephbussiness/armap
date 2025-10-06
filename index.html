@@ -69,7 +69,6 @@
         align-items: center;
         justify-content: center;
         font-size: 20px;
-        z-index: 10;
         transition: background 0.2s;
       }
       
@@ -198,16 +197,16 @@
     <a-scene
       vr-mode-ui="enabled: false"
       embedded
-      arjs="sourceType: webcam; trackingMethod: best; debugUIEnabled: false;"
+      arjs="sourceType: webcam; trackingMethod: best; debugUIEnabled: false; sourceWidth: 1280; sourceHeight: 720;"
       loading-screen="enabled: false"
     >
       <a-camera gps-camera rotation-reader>
         <!-- HUD overlay -->
         <a-entity
-          position="0 0.8 -1"
-          geometry="primitive: plane; width: 0.8; height: 0.15"
-          material="color: #000; opacity: 0.5"
-          text="value: Joylens Store Locator; align: center; color: white; width: 2"
+          position="0 -0.4 -1"
+          geometry="primitive: plane; width: 1; height: 0.2"
+          material="color: #1e293b; opacity: 0.7"
+          text="value: Joylens Store Navigator; align: center; color: white; font: roboto; width: 2"
         ></a-entity>
       </a-camera>
 
@@ -219,63 +218,65 @@
       >
         <!-- Store Building Model -->
         <a-box
-          color="#ff6b6b"
-          depth="4"
-          height="6"
-          width="4"
+          color="#ef4444"
+          depth="3"
+          height="5"
+          width="3"
           animation="property: rotation; to: 0 360 0; loop: true; dur: 10000"
+          material="shader: standard; metalness: 0.2; roughness: 0.8"
         ></a-box>
         
         <!-- Store Label -->
         <a-text
-          value="JOYLENS"
+          value="JOYLENS STORE"
           align="center"
-          position="0 4 0"
-          scale="3 3 3"
+          position="0 3.5 0"
+          scale="2.5 2.5 2.5"
           color="#ffffff"
           font="roboto"
-          geometry="primitive: plane; width: 3; height: 1"
-          material="color: #ff6b6b; opacity: 0.9"
+          geometry="primitive: plane; width: 2.5; height: 0.8"
+          material="color: #ef4444; opacity: 0.9"
         ></a-text>
         
-        <!-- Floating Icon -->
+        <!-- Floating Pin Icon -->
         <a-entity
-          geometry="primitive: sphere; radius: 0.5"
-          material="color: #ffd93d"
-          position="0 5 0"
-          animation="property: position; to: 0 5.5 0; dir: alternate; loop: true; dur: 1000"
+          geometry="primitive: sphere; radius: 0.4"
+          material="color: #facc15"
+          position="0 4.5 0"
+          animation="property: position; to: 0 5 0; dir: alternate; loop: true; dur: 800"
         ></a-entity>
       </a-entity>
 
       <!-- Direction Arrow -->
       <a-entity
         id="directionArrow"
-        geometry="primitive: cone; radiusBottom: 0.5; radiusTop: 0; height: 2"
-        material="color: #4ecdc4; opacity: 0.8"
-        position="0 -1 -5"
+        geometry="primitive: cone; radiusBottom: 0.6; radiusTop: 0.1; height: 2"
+        material="color: #22d3ee; opacity: 0.85; shader: standard"
+        position="0 -0.5 -3"
         visible="false"
       ></a-entity>
     </a-scene>
 
     <script>
-      // Joylens Store data with image
+      // Joylens Store data
       const joylens = {
         name: "Joylens Store",
         lat: 14.370209559833405,
         lng: 120.92365054409018,
-        desc: "A local convenience and optical store offering a wide range of products including eyewear, school supplies, and daily essentials. Located conveniently within the campus area.",
+        desc: "A local convenience and optical store offering eyewear, school supplies, and daily essentials within the campus area.",
         image: "https://lh3.googleusercontent.com/p/AF1QipMHNCOzFG0I9eGl41Sn28yy2sLe1BLj8EPPDvAv=s1360-w1360-h1020-rw"
       };
 
       let userPosition = null;
       let waypointActive = false;
+      let lastBearing = 0;
 
-      // Hide loading spinner when scene is ready
+      // Hide loading spinner when AR scene is ready
       window.addEventListener('arjs-video-loaded', () => {
         document.getElementById('loadingSpinner').style.display = 'none';
       });
 
-      // Calculate distance between two GPS coordinates
+      // Calculate distance between two GPS coordinates (Haversine formula)
       function calculateDistance(lat1, lon1, lat2, lon2) {
         const R = 6371e3; // Earth's radius in meters
         const φ1 = lat1 * Math.PI / 180;
@@ -284,12 +285,9 @@
         const Δλ = (lon2 - lon1) * Math.PI / 180;
 
         const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-                  Math.cos(φ1) * Math.cos(φ2) *
-                  Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+                  Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-        const distance = R * c;
-        return distance; // Return in meters
+        return R * c; // Distance in meters
       }
 
       // Format distance for display
@@ -301,39 +299,43 @@
         }
       }
 
+      // Calculate bearing between two points
+      function calculateBearing(lat1, lon1, lat2, lon2) {
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+        const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+                  Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+        const bearing = Math.atan2(y, x);
+        return (bearing * 180 / Math.PI + 360) % 360;
+      }
+
+      // Smooth bearing to reduce jitter
+      function smoothBearing(newBearing) {
+        const alpha = 0.1; // Smoothing factor (0 to 1, lower is smoother)
+        lastBearing = (alpha * newBearing + (1 - alpha) * lastBearing) % 360;
+        return lastBearing;
+      }
+
       // Show info card with animation
       function showInfo(building) {
         const card = document.getElementById("infoCard");
         const image = document.getElementById("buildingImage");
         
-        // Set building information
         document.getElementById("infoName").textContent = building.name;
         document.getElementById("infoDesc").textContent = building.desc;
-        
-        // Set building image
         image.src = building.image;
-        image.onerror = function() {
-          // Fallback if image fails to load
-          this.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2RkZCIvPjx0ZXh0IHRleHQtYW5jaG9yPSJtaWRkbGUiIHg9IjIwMCIgeT0iMTAwIiBzdHlsZT0iZmlsbDojOTk5O2ZvbnQtd2VpZ2h0OmJvbGQ7Zm9udC1zaXplOjIwcHg7Zm9udC1mYW1pbHk6QXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWY7ZG9taW5hbnQtYmFzZWxpbmU6Y2VudHJhbCI+Sm95bGVucyBTdG9yZTwvdGV4dD48L3N2Zz4=';
+        image.onerror = () => {
+          image.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2RkZCIvPjx0ZXh0IHRleHQtYW5jaG9yPSJtaWRkbGUiIHg9IjIwMCIgeT0iMTAwIiBzdHlsZT0iZmlsbDojOTk5O2ZvbnQtd2VpZ2h0OmJvbGQ7Zm9udC1zaXplOjIwcHg7Zm9udC1mYW1pbHk6QXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWY7ZG9taW5hbnQtYmFzZWxpbmU6Y2VudHJhbCI+Sm95bGVucyBTdG9yZTwvdGV4dD48L3N2Zz4=';
         };
 
-        // Get user location and calculate distance
-        if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(position => {
-            userPosition = position.coords;
-            const distance = calculateDistance(
-              userPosition.latitude,
-              userPosition.longitude,
-              building.lat,
-              building.lng
-            );
-            document.getElementById("infoDistance").textContent = formatDistance(distance);
-          }, error => {
-            document.getElementById("infoDistance").textContent = "Location unavailable";
-          });
+        // Update distance
+        if (userPosition) {
+          const distance = calculateDistance(userPosition.latitude, userPosition.longitude, building.lat, building.lng);
+          document.getElementById("infoDistance").textContent = formatDistance(distance);
+        } else {
+          document.getElementById("infoDistance").textContent = "Calculating...";
         }
 
-        // Show card with animation
         card.style.display = "block";
         setTimeout(() => {
           card.classList.remove("hidden");
@@ -351,69 +353,72 @@
         }, 300);
       }
 
-      // Set waypoint to Joylens
+      // Toggle waypoint and show/hide arrow
       function goToJoylens() {
         waypointActive = !waypointActive;
         const arrow = document.getElementById("directionArrow");
-        
         if (waypointActive) {
           arrow.setAttribute("visible", "true");
-          alert(`✅ Waypoint activated!\n📍 Joylens Store\n📌 ${joylens.lat.toFixed(6)}, ${joylens.lng.toFixed(6)}\n\nFollow the arrow indicator!`);
+          alert(`✅ Waypoint set!\n📍 Joylens Store\n📌 ${joylens.lat.toFixed(6)}, ${joylens.lng.toFixed(6)}\n\nFollow the blue arrow!`);
         } else {
           arrow.setAttribute("visible", "false");
           alert("Waypoint deactivated");
         }
       }
 
-      // Get directions (opens in maps app)
+      // Open Google Maps for directions
       function getDirections() {
         const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${joylens.lat},${joylens.lng}&travelmode=walking`;
         window.open(mapsUrl, '_blank');
       }
 
-      // Click handler for the marker
-      document.querySelector("#joylensMarker").addEventListener("click", () => {
-        showInfo(joylens);
+      // Custom component for marker click handling
+      AFRAME.registerComponent('clickable', {
+        init: function () {
+          this.el.addEventListener('click', () => {
+            showInfo(joylens);
+          });
+        }
       });
 
-      // Update direction arrow
-      AFRAME.registerComponent("update-arrow", {
-        tick: function() {
+      // Custom component for arrow updates
+      AFRAME.registerComponent('update-arrow', {
+        tick: function () {
           if (waypointActive && userPosition) {
-            const arrow = document.querySelector("#directionArrow");
+            const arrow = this.el;
             const bearing = calculateBearing(
               userPosition.latitude,
               userPosition.longitude,
               joylens.lat,
               joylens.lng
             );
-            arrow.setAttribute("rotation", `0 ${bearing} 0`);
+            const smoothedBearing = smoothBearing(bearing);
+            arrow.setAttribute('rotation', `0 ${smoothedBearing} 0`);
+            
+            // Update distance in info card if visible
+            if (document.getElementById("infoCard").style.display === "block") {
+              const distance = calculateDistance(
+                userPosition.latitude,
+                userPosition.longitude,
+                joylens.lat,
+                joylens.lng
+              );
+              document.getElementById("infoDistance").textContent = formatDistance(distance);
+            }
           }
         }
       });
-
-      // Calculate bearing between two points
-      function calculateBearing(lat1, lon1, lat2, lon2) {
-        const dLon = (lon2 - lon1) * Math.PI / 180;
-        const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
-        const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
-                  Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
-        const bearing = Math.atan2(y, x);
-        return (bearing * 180 / Math.PI + 360) % 360;
-      }
-
-      // Apply update-arrow component
-      document.querySelector("#directionArrow").setAttribute("update-arrow", "");
 
       // Continuous GPS tracking
       if (navigator.geolocation) {
         navigator.geolocation.watchPosition(
           (position) => {
             userPosition = position.coords;
-            console.log("User position updated:", userPosition.latitude, userPosition.longitude);
+            console.log("User position:", userPosition.latitude, userPosition.longitude);
           },
           (error) => {
             console.error("GPS error:", error);
+            document.getElementById("infoDistance").textContent = "Location unavailable";
           },
           {
             enableHighAccuracy: true,
@@ -423,7 +428,10 @@
         );
       }
 
-      // Initialize by showing Joylens info after 2 seconds
+      // Apply update-arrow component
+      document.querySelector("#directionArrow").setAttribute("update-arrow", "");
+
+      // Initialize by showing info card after 2 seconds
       setTimeout(() => {
         showInfo(joylens);
       }, 2000);
